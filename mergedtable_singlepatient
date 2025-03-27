@@ -1,0 +1,66 @@
+# merge labevents and chartevents
+
+import pandas as pd
+
+# for hadm_id = 25024414
+# Load labevents and chartevents
+# Replace file paths with your actual file locations or use SQL queries if you're querying from a database.
+labevents = pd.read_csv('labevents_25024414.csv', usecols=[
+    'subject_id', 'hadm_id', 'specimen_id', 'itemid', 'charttime', 'storetime', 'value'
+])
+chartevents = pd.read_csv('chartevents_25024414.csv', usecols=[
+    'subject_id', 'hadm_id', 'stay_id', 'itemid', 'charttime', 'storetime', 'value'
+])
+
+# Add labevents and chartevents flag columns
+labevents['labevents'] = 1
+labevents['chartevents'] = 0
+
+chartevents['labevents'] = 0
+chartevents['chartevents'] = 1
+
+# Align columns for concatenation
+labevents['stay_id'] = pd.NA  # Add stay_id to labevents as it's not present
+labevents = labevents[['subject_id', 'hadm_id', 'stay_id', 'specimen_id', 'itemid',
+                       'charttime', 'storetime', 'value', 'labevents', 'chartevents']]
+
+chartevents['specimen_id'] = pd.NA  # Add specimen_id to chartevents
+chartevents = chartevents[['subject_id', 'hadm_id', 'stay_id', 'specimen_id', 'itemid',
+                           'charttime', 'storetime', 'value', 'labevents', 'chartevents']]
+
+# Merge/Concatenate the tables
+master_table = pd.concat([labevents, chartevents], ignore_index=True)
+
+# Sort by subject_id and charttime to maintain order
+master_table = master_table.sort_values(by=['subject_id', 'charttime']).reset_index(drop=True)
+
+# add column to denote if lab value collected while in ICU (within intime and outtime)
+
+import pandas as pd
+
+# Load the basicinfo table
+basicinfo = pd.read_csv('basicinfo_25024414.csv', usecols=[
+    'subject_id', 'hadm_id', 'stay_id', 'intime', 'outtime'
+])
+
+# Convert intime, outtime, and charttime to datetime format for comparison
+basicinfo['intime'] = pd.to_datetime(basicinfo['intime'])
+basicinfo['outtime'] = pd.to_datetime(basicinfo['outtime'])
+master_table['charttime'] = pd.to_datetime(master_table['charttime'])
+
+# Merge master_table with basicinfo to check ICU stay times
+master_table = master_table.merge(basicinfo, on=['subject_id', 'hadm_id'], how='left')
+
+# Add in_ICU column: 1 if charttime is within ICU stay, 0 otherwise
+master_table['in_ICU'] = ((master_table['charttime'] >= master_table['intime']) &
+                          (master_table['charttime'] <= master_table['outtime'])).astype(int)
+
+# Drop unneeded columns (intime and outtime) after adding in_ICU
+master_table = master_table.drop(columns=['intime', 'outtime'])
+
+# Save the updated master_table to CSV
+master_table.to_csv('master_glucose_data_with_ICU.csv', index=False)
+
+print("Master table updated with 'in_ICU' column! Shape:", master_table.shape)
+master_table.head()  # Display the first few rows of the merged table for verification
+
